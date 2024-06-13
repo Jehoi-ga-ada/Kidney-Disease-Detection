@@ -48,29 +48,6 @@ def main():
 
     normalize = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 
-    train_dataset = KidneyDataset(
-        data_dir=DATA_DIR,
-        image_list_file=TRAIN_IMAGE_LIST,
-        transform=transforms.Compose([
-            transforms.Resize(256),
-            transforms.RandomResizedCrop(224),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize,
-        ])
-    )
-
-    valid_dataset = KidneyDataset(
-        data_dir=DATA_DIR,
-        image_list_file=VALID_IMAGE_LIST,
-        transform=transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            normalize,
-        ])
-    )
-
     test_dataset = KidneyDataset(
         data_dir=DATA_DIR,
         image_list_file=TEST_IMAGE_LIST,
@@ -82,69 +59,7 @@ def main():
         ])
     )
 
-    train_loader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=5, pin_memory=True)
-    valid_loader = DataLoader(dataset=valid_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=5, pin_memory=True)
     test_loader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=5, pin_memory=True)
-
-    criterion = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-
-    best_auc = 0.0
-    best_loss = float('inf')
-    epochs_no_improve = 0
-
-    for epoch in range(NUM_EPOCHS):
-        # Training
-        model.train()
-        running_loss = 0.0
-        train_loader_tqdm = tqdm(train_loader, desc=f"Epoch {epoch+1}/{NUM_EPOCHS}", unit="batch")
-        for i, (inputs, targets) in enumerate(train_loader_tqdm):
-            inputs = inputs.cuda()
-            targets = targets.cuda()
-
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
-            loss.backward()
-            optimizer.step()
-
-            running_loss += loss.item()
-            train_loader_tqdm.set_postfix(loss=running_loss / (i + 1))
-
-        # Validation
-        model.eval()
-        gt = torch.FloatTensor().cuda()
-        pred = torch.FloatTensor().cuda()
-        valid_loss = 0.0
-        valid_loader_tqdm = tqdm(valid_loader, desc=f"Validation Epoch {epoch+1}/{NUM_EPOCHS}", unit="batch")
-        with torch.no_grad():
-            for i, (inputs, targets) in enumerate(valid_loader_tqdm):
-                targets = targets.cuda()
-                gt = torch.cat((gt, targets), 0)
-                bs, c, h, w = inputs.size()
-                inputs = inputs.cuda()
-                outputs = model(inputs)
-                loss = criterion(outputs, targets)
-                valid_loss += loss.item()
-                pred = torch.cat((pred, outputs.data), 0)
-
-        valid_loss /= len(valid_loader)
-        AUROCs = compute_AUCs(gt, pred)
-        AUROC_avg = np.array(AUROCs).mean()
-        print(f'Epoch [{epoch + 1}/{NUM_EPOCHS}], Validation AUROC: {AUROC_avg:.3f}, Validation Loss: {valid_loss:.3f}')
-
-        # Save the best model and implement early stopping
-        if AUROC_avg > best_auc or valid_loss < best_loss:
-            best_auc = AUROC_avg
-            best_loss = valid_loss
-            torch.save({'state_dict': model.state_dict()}, CKPT_PATH)
-        else:
-            epochs_no_improve += 1
-            if epochs_no_improve > PATIENCE:
-                print(f'Early stopping triggered after {epoch+1} epochs')
-                break
-
-    print('Finished Training')
 
     # Testing
     model.eval()

@@ -2,3 +2,4 @@ CT-KIDNEY-DATASET-Normal-Cyst-Tumor-Stone/CT-KIDNEY-DATASET-Normal-Cyst-Tumor-St
 **/**__pycache__
 kidneyData.csv
 wait.ipynb
+model.pth.tar

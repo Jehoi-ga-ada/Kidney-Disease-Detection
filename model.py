@@ -16,10 +16,11 @@ from torch.utils.data import DataLoader
 from read_data import KidneyDataset
 from sklearn.metrics import roc_auc_score
 from torchvision.models import DenseNet121_Weights
+from tqdm import tqdm  # Import tqdm for the progress bar
 
 CKPT_PATH = 'model.pth.tar'
 N_CLASSES = 4
-CLASS_NAMES = [ 'Tumor', 'Normal', 'Cyst', 'Stone' ]
+CLASS_NAMES = ['Tumor', 'Normal', 'Cyst', 'Stone']
 DATA_DIR = 'CT-KIDNEY-DATASET-Normal-Cyst-Tumor-Stone'
 TEST_IMAGE_LIST = 'CT-KIDNEY-DATASET-Normal-Cyst-Tumor-Stone/Labels/test_list.csv'
 BATCH_SIZE = 32
@@ -31,12 +32,20 @@ def main():
 
     # initialize and load the model
     model = DenseNet121(N_CLASSES).cpu()
-    model = torch.nn.DataParallel(model).cpu()
+    # Removed DataParallel wrapping for simplicity
 
     if os.path.isfile(CKPT_PATH):
         print("=> loading checkpoint")
-        checkpoint = torch.load(CKPT_PATH)
-        model.load_state_dict(checkpoint['state_dict'])
+        checkpoint = torch.load(CKPT_PATH, map_location=torch.device('cpu'))
+        state_dict = checkpoint['state_dict']
+        # Handle DataParallel state_dict if present
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            if k.startswith('module.'):
+                new_state_dict[k[7:]] = v  # Remove 'module.' prefix
+            else:
+                new_state_dict[k] = v
+        model.load_state_dict(new_state_dict)
         print("=> loaded checkpoint")
     else:
         print("=> no checkpoint found")
@@ -45,15 +54,13 @@ def main():
                                      [0.229, 0.224, 0.225])
 
     test_dataset = KidneyDataset(data_dir=DATA_DIR,
-                                    image_list_file=TEST_IMAGE_LIST,
-                                    transform=transforms.Compose([
-                                        transforms.Resize(256),
-                                        transforms.TenCrop(224),
-                                        transforms.Lambda
-                                        (lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])),
-                                        transforms.Lambda
-                                        (lambda crops: torch.stack([normalize(crop) for crop in crops]))
-                                    ]))
+                                 image_list_file=TEST_IMAGE_LIST,
+                                 transform=transforms.Compose([
+                                     transforms.Resize(256),
+                                     transforms.TenCrop(224),
+                                     transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])),
+                                     transforms.Lambda(lambda crops: torch.stack([normalize(crop) for crop in crops]))
+                                 ]))
     test_loader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE,
                              shuffle=False, num_workers=0, pin_memory=True)
 
@@ -65,9 +72,9 @@ def main():
 
     # switch to evaluate mode
     model.eval()
-    
+
     with torch.no_grad():
-        for i, (inp, target) in enumerate(test_loader):
+        for i, (inp, target) in enumerate(tqdm(test_loader, desc="Testing Progress")):
             target = target.cpu()
             gt = torch.cat((gt, target), 0)
             bs, n_crops, c, h, w = inp.size()
